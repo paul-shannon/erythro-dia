@@ -21,13 +21,14 @@ srm.coexpression.tab <- function()
                             choices = fraction.names,
                             selected = fraction.names[1:3]),
          radioButtons("srm.transformChoice", "Data Transform", c("None", "Normalized")), # , "Arcsinh")),
-         radioButtons("srm.lineTypeSelector", "Smoothing", c("No", "Yes")),
          selectizeInput("proteinSelector", "Protein/s:", goi, selected=goi[2],  multiple=TRUE,
                         options=list(maxOptions=nrow(tbl.all))),
-         selectizeInput("complexSelector", "Draw from Complex:", complexes, selected=complexes[2],
+         selectizeInput("complexSelector", "Draw from Complex:", complexes, selected=NULL,
                         multiple=TRUE, options=list(maxOptions=length(complexes))),
          sliderInput("correlationThresholdSlider", label = "Pearson", min = 0, max = 1, value = 0.9, step = 0.01),
          radioButtons("correlationDirectionChooser", "Find Correlations", c("None", "+", "-")),
+         br(),
+         radioButtons("srm.lineTypeSelector", "Smoothing", c("No", "Yes")),
          br(),
          verbatimTextOutput(outputId="currentVectorDisplay"),
          width=2
@@ -58,7 +59,7 @@ ui <- fluidPage(
 #------------------------------------------------------------------------------------------------------------------------
 server <- function(input, output, session) {
 
-   reactiveState <- reactiveValues(selectedTF=NULL, correlatedTFs=list())
+    reactiveState <- reactiveValues(selectedTF=NULL, correlatedTFs=list())
 
     currentCount <- reactive({
       printf("--- entering currentCount()")
@@ -72,9 +73,9 @@ server <- function(input, output, session) {
       proteins <- intersect(proteins, tbl.complexes.sub$gene)
       printf("fractions: %s", paste(fractions, collapse=", "))
       printf("complexes: %s", paste(complexes, collapse=", "))
-      tbl.sub <- subset(tbl.all, gene %in% proteins & fraction %in% fractions)
-      result <- nrow(tbl.sub)
+      result <- nrow(tbl.current)
       printf("  currentCount: %d", result)
+
       return(result)
       })
 
