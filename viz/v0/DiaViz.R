@@ -11,9 +11,8 @@ textOutputStyle <- paste0("margin:10px; margin-left: 50px;",
 print(load("tbl.all-11492x14.RData"))  # tbl.all
 max.time.points <- 9
 fraction.names <- sort(unique(tbl.all$fraction))
-#goi <- sort(unique(tbl.all$gene))
 
-print(load("tbl.complexes.RData"))
+tbl.complexes <- get(load("tbl.complexes.RData"))
 complexes <- sort(unique(tbl.complexes$complex))
 #----------------------------------------------------------------------------------------------------
 DiaVizApp = R6Class("DiaVizApp",
@@ -22,7 +21,9 @@ DiaVizApp = R6Class("DiaVizApp",
     private = list(proteinCount=NULL,
                    tbl.all=data.frame(),
                    tbl.current=data.frame(),
-                   currentProteins=NULL
+                   tbl.selected=data.frame(),
+                   currentProteins=NULL,
+                   transform="None"
                    ),
 
     #--------------------------------------------------------------------------------
@@ -54,7 +55,7 @@ DiaVizApp = R6Class("DiaVizApp",
 
         #------------------------------------------------------------
         plotCorrelatedProteins=function(input, output){
-            protein <- input$proteinSelector[1]
+            proteins <- input$proteinSelector[1]
             correlationThreshold <- input$correlationThresholdSlider;
             correlationDirection <- isolate(input$correlationDirectionChooser)
             proteins.all <- self$findCorrelated(protein, correlationThreshold, correlationDirection)
@@ -67,20 +68,21 @@ DiaVizApp = R6Class("DiaVizApp",
             }, # plotCorrelatedProteins
 
         #------------------------------------------------------------
-        plotProteins= function(proteins, input, output, transform, proteinCategories){
-            printf("plotProteins (%s): %s", transform, paste(proteins, collapse=", "))
-            printf("  categories to include: %s", paste(proteinCategories, collapse=", "))
-
-            tbl.sub <- subset(private$tbl.current, gene %in% proteins & fraction %in% proteinCategories)
+        plotProteins=function(input, output){
+            printf("plotProteins, nrow(tbl.selected): %d", nrow(private$tbl.selected))
+            printf("plotProteins, currentProteins:  %d", length(private$currentProteins))
+            print("--- tbl.selected")
+            #print(head(private$tbl.selected))
+            tbl.sub <- subset(private$tbl.selected, gene %in% private$currentProteins)
+            printf("plotProteins, nrow(tbl.sub): %d", nrow(tbl.sub))
             protein.fraction.names <- sprintf("%s-%s", tbl.sub$gene, tbl.sub$fraction) # eg, "A2M-cyto" & "A2M-ne1"
             mtx <- tbl.sub[, grep("^D", colnames(private$tbl.current), ignore.case=TRUE)] # just the time columns
 
-            if(nrow(mtx) > 0 & transform == "Normalized"){
+            if(nrow(mtx) > 0 & private$transform == "Normalized"){
                 mtx <- t(apply(mtx, 1, function(row) row/max(row)))
-            }
+                }
 
             rownames(mtx) <- protein.fraction.names
-
             timePoints <- as.numeric(sub("D", "", colnames(mtx)))
             protein.count.vectors <- lapply(seq_len(nrow(mtx)), function(row) as.numeric(mtx[row,]))
             names(protein.count.vectors) <- protein.fraction.names
@@ -98,13 +100,14 @@ DiaVizApp = R6Class("DiaVizApp",
                 vectorsWithTimes[[protein.fraction.name]] <- lapply(seq_len(length(timePoints)),
                                                                     function(i)
                                                                         return(list(x=timePoints[i], y=vector[i])))
-            } # for protein.fraction.name
+                } # for protein.fraction.name
 
             lineSmoothing <- input$srm.lineTypeSelector
             data <- list(vectors=vectorsWithTimes, xMax=xMax, yMax=yMax, cmd="plot", smoothing=lineSmoothing)
-            r2d3(data, script = "multiPlot.js")
-
-            },
+            output$srm.d3 <- renderD3({
+                r2d3(data, script = "multiPlot.js")
+                })
+            }, # plotProteins
 
         #------------------------------------------------------------
         maxOfVectors = function(vectorList){
@@ -121,9 +124,9 @@ DiaVizApp = R6Class("DiaVizApp",
         #------------------------------------------------------------
         ui = function(){
            fluidPage(
+               br(), br(),
                sidebarLayout(
                    sidebarPanel(
-                       verbatimTextOutput(outputId="currentVectorDisplay"),
                        checkboxGroupInput("fractionSelector",
                                           label="Choose Cellular Fractions:",
                                           choices = fraction.names,
@@ -141,19 +144,20 @@ DiaVizApp = R6Class("DiaVizApp",
                                       multiple=TRUE,
                                       options=list(maxOptions=nrow(private$tbl.current))),
                        verbatimTextOutput(outputId="currentSubsetCountDisplay"),
-                       actionButton("plotCurrentSelelctionButton", "Plot Current Selection"),
+                       actionButton("plotCurrentSelectionButton", "Plot Current Selection"),
                        br(),
-                       br(),
-                       sliderInput("correlationThresholdSlider", label = "Pearson", min = 0, max = 1, value = 0.9, step = 0.01),
-                       radioButtons("correlationDirectionChooser", "Find Correlations", c("None", "+", "-")),
+                       #br(),
+                       #sliderInput("correlationThresholdSlider", label = "Pearson", min = 0, max = 1, value = 0.9, step = 0.01),
+                       #radioButtons("correlationDirectionChooser", "Find Correlations", c("None", "+", "-")),
                        br(),
                        radioButtons("srm.transformChoice", "Data Transform", c("None", "Normalized")), # , "Arcsinh")),
-                       radioButtons("srm.lineTypeSelector", "Smoothing", c("No", "Yes")),
-                       width=2
+                       #radioButtons("srm.lineTypeSelector", "Smoothing", c("No", "Yes")),
+                       verbatimTextOutput(outputId="currentVectorDisplay"),
+                       width=3
                        ),
                    mainPanel(
                        d3Output("srm.d3", height="80vh"),
-                       width=10
+                       width=9
                        )
                    ) # sidebarLayout
            )},
@@ -163,15 +167,15 @@ DiaVizApp = R6Class("DiaVizApp",
 
             print(noquote(sprintf("entering server")))
 
-            currentProteins <- reactive({
-                proteins <- input$proteinSelector
-                private$currentProteins <- proteins
-                })
 
-            observe({
+            observeEvent(input$proteinSelector, ignoreInit=FALSE, {
                 proteins <- input$proteinSelector
                 private$currentProteins <- proteins
-                output$currentSubsetCountDisplay <- renderText(length(proteins))
+                private$tbl.selected <- subset(private$tbl.current, gene %in% proteins)
+                row.count <- nrow(private$tbl.selected)
+                printf("tbl.selected has %d rows", row.count)
+                text <- sprintf("%d rows, %d proteins", row.count, length(proteins))
+                output$currentSubsetCountDisplay <- renderText(text)
                 })
 
 
@@ -204,22 +208,8 @@ DiaVizApp = R6Class("DiaVizApp",
                     tbl.tmp <- subset(tbl.tmp, fraction %in% fractions)
 
                 printf("==== nrow(tbl.tmp) 4: %d", nrow(tbl.tmp))
-                #printf("--- current proteins: %d", length(proteins))
-                #print(proteins)
-                #if(!is.null(proteins)){
-                #   printf("reducing tbl tmp to %d proteins", length(proteins))
-                #   tbl.tmp <- subset(tbl.tmp, gene %in% proteins)
-                #   printf("reduced tbl tmp, %d rows", nrow(tbl.tmp))
-                #   }
 
                 printf("==== nrow(tbl.tmp) 5: %d", nrow(tbl.tmp))
-                #if(is.null(proteins)){
-                #    surviving.proteins <- sort(unique(tbl.tmp$gene))
-                #    printf("head(surviving.proteins): %s", paste(head(surviving.proteins), collapse=", "))
-                #    printf("--- updating protein selectizor with %d proteins", length(surviving.proteins))
-                #    updateSelectizeInput(session, input$proteinSelector,
-                #                         choices=surviving.proteins, server=TRUE)
-                #    }
                 printf("==== nrow(tbl.tmp) 6: %d", nrow(tbl.tmp))
                 private$tbl.current <- tbl.tmp
                 return(nrow(private$tbl.current))
@@ -235,7 +225,15 @@ DiaVizApp = R6Class("DiaVizApp",
                                      server=TRUE
                                      )
                 printf("--- observe, new row count: %d", row.count)
-                output$currentCurveCountDisplay <- renderText(row.count)
+                output$currentCurveCountDisplay <-
+                    renderText(sprintf("%d rows, %d proteins", row.count, length(unique.proteins)))
+                })
+
+            observeEvent(input$plotCurrentSelectionButton, ignoreInit=FALSE, {
+                printf("--- plotCurrentSelectionButton")
+                printf("plot %d proteins", length(private$currentProteins))
+                self$plotProteins(input, output)
+                #self$plotCorrelatedProteins(input, output)
                 })
 
             # output$currentCurveCountDisplay <- renderText(currentTable())
@@ -260,7 +258,9 @@ DiaVizApp = R6Class("DiaVizApp",
             #    })
 
             observeEvent(input$srm.transformChoice, ignoreInit=TRUE, {
-                #self$plotCorrelatedProteins(input, output)
+                new.choice <- input$srm.transformChoice
+                printf("--- setting private$transform: %s", new.choice)
+                private$transform <- new.choice
                 })
 
             observeEvent(input$correlationThresholdSlider, ignoreInit=TRUE, {
@@ -272,14 +272,12 @@ DiaVizApp = R6Class("DiaVizApp",
                 })
 
 
-            #observeEvent(input$currentlySelectedVector, ignoreInit=FALSE, {
-            #    newValue <- input$currentlySelectedVector
-                                        # printf("newValue: %s", newValue)
-            #    if(nchar(newValue) == 0)
-            #        newValue <- "   "
-                #output$currentVectorDisplay <- renderText({newValue})
-                                        #output$currentVectorDisplay <- renderText({newValue})
-             #   })
+            observeEvent(input$currentlySelectedVector, ignoreInit=FALSE, {
+                newValue <- input$currentlySelectedVector
+                printf("newValue: %s", newValue)
+                if(nchar(newValue) == 0) newValue <- "   "
+                output$currentVectorDisplay <- renderText({newValue})
+                })
 
             } # server
 
@@ -290,8 +288,8 @@ deploy <-function()
 {
    repos <- options("repos")[[1]]
    stopifnot(sort(names(repos)) == c("BioCann", "BioCsoft", "CRAN"))
-   stopifnot(repos$BioCann=="https://bioconductor.org/packages/3.13/data/annotation")
-   stopifnot(repos$BioCsoft=="https://bioconductor.org/packages/3.13/bioc")
+   stopifnot(repos$BioCann=="https://bioconductor.org/packages/3.16/data/annotation")
+   stopifnot(repos$BioCsoft=="https://bioconductor.org/packages/3.16/bioc")
    stopifnot(repos$CRAN=="https://cran.microsoft.com")
    require(devtools)
 
@@ -303,7 +301,7 @@ deploy <-function()
 
    require(rsconnect)
 
-   deployApp(account="paulshannon",
+   deployApp(account="hoodlab",
               appName="diaViz",
               appTitle="DiaViz",
               appFiles=c("DiaViz.R"),
