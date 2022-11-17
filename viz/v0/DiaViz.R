@@ -8,6 +8,8 @@ textOutputStyle <- paste0("margin:10px; margin-left: 50px;",
 		          "border: 1px solid black; font-size: 20px;")
 
 #----------------------------------------------------------------------------------------------------
+printf <- function(...) print(noquote(sprintf(...)))
+#----------------------------------------------------------------------------------------------------
 print(load("tbl.all-11492x14.RData"))  # tbl.all
 max.time.points <- 9
 fraction.names <- sort(unique(tbl.all$fraction))
@@ -302,9 +304,12 @@ deploy <-function()
    require(rsconnect)
 
    deployApp(account="hoodlab",
-              appName="diaViz",
-              appTitle="DiaViz",
-              appFiles=c("DiaViz.R"),
+             appName="diaViz",
+             appTitle="DiaViz",
+             appFiles=c("DiaViz.R",
+                        "multiPlot.js", "linePlot.js", "linePlot.css", "multiPlot.css",
+                        "tbl.all-11492x14.RData",
+                        "tbl.complexes.RData"),
               appPrimaryDoc="DiaViz.R"
               )
 
@@ -313,6 +318,6 @@ deploy <-function()
 #shinyApp(ui = ui, server = server)
 
 app <- DiaVizApp$new()
-x <- shinyApp(app$ui, app$server)
-runApp(x, port=1156)
+shinyApp(app$ui, app$server)
+#runApp(x, port=1156)
 
