@@ -71,12 +71,12 @@ DiaVizApp = R6Class("DiaVizApp",
 
         #------------------------------------------------------------
         plotProteins=function(input, output){
-            printf("plotProteins, nrow(tbl.selected): %d", nrow(private$tbl.selected))
-            printf("plotProteins, currentProteins:  %d", length(private$currentProteins))
-            print("--- tbl.selected")
+            #printf("plotProteins, nrow(tbl.selected): %d", nrow(private$tbl.selected))
+            #printf("plotProteins, currentProteins:  %d", length(private$currentProteins))
+            #print("--- tbl.selected")
             #print(head(private$tbl.selected))
             tbl.sub <- subset(private$tbl.selected, gene %in% private$currentProteins)
-            printf("plotProteins, nrow(tbl.sub): %d", nrow(tbl.sub))
+            #printf("plotProteins, nrow(tbl.sub): %d", nrow(tbl.sub))
             protein.fraction.names <- sprintf("%s-%s", tbl.sub$gene, tbl.sub$fraction) # eg, "A2M-cyto" & "A2M-ne1"
             mtx <- tbl.sub[, grep("^D", colnames(private$tbl.current), ignore.case=TRUE)] # just the time columns
 
@@ -99,9 +99,10 @@ DiaVizApp = R6Class("DiaVizApp",
 
             for(protein.fraction.name in protein.fraction.names){
                 vector <- protein.count.vectors[[protein.fraction.name]]
-                vectorsWithTimes[[protein.fraction.name]] <- lapply(seq_len(length(timePoints)),
-                                                                    function(i)
-                                                                        return(list(x=timePoints[i], y=vector[i])))
+                vectorsWithTimes[[protein.fraction.name]] <-
+                    lapply(seq_len(length(timePoints)),
+                           function(i)
+                               return(list(x=timePoints[i], y=vector[i])))
                 } # for protein.fraction.name
 
             lineSmoothing <- input$srm.lineTypeSelector
@@ -227,6 +228,8 @@ DiaVizApp = R6Class("DiaVizApp",
                                      server=TRUE
                                      )
                 printf("--- observe, new row count: %d", row.count)
+                private$currentProteins <- unique.proteins
+                private$tbl.selected <- subset(private$tbl.current, gene %in% unique.proteins)
                 output$currentCurveCountDisplay <-
                     renderText(sprintf("%d rows, %d proteins", row.count, length(unique.proteins)))
                 })
@@ -276,8 +279,20 @@ DiaVizApp = R6Class("DiaVizApp",
 
             observeEvent(input$currentlySelectedVector, ignoreInit=FALSE, {
                 newValue <- input$currentlySelectedVector
-                printf("newValue: %s", newValue)
-                if(nchar(newValue) == 0) newValue <- "   "
+                #printf("newValue: %s  %d chars", newValue, nchar(newValue))
+                if(nchar(newValue) > 0){
+                    #printf("adding peptide count")
+                    tokens <- strsplit(newValue, "-")[[1]]
+                    current.gene <- tokens[1]
+                    current.fraction <- tokens[2]
+                    peptideCount <- subset(private$tbl.current,
+                                           gene==current.gene &
+                                           fraction==current.fraction)$peptideCount
+                    newValue <- sprintf("%s-%dp", newValue, peptideCount)
+                    #printf(" peptideCount added: %s", newValue)
+                    } else {
+                       newValue <- "   "
+                       }
                 output$currentVectorDisplay <- renderText({newValue})
                 })
 
@@ -319,5 +334,4 @@ deploy <-function()
 
 app <- DiaVizApp$new()
 shinyApp(app$ui, app$server)
-#runApp(x, port=1156)
 
