@@ -14,8 +14,7 @@ read.files <- function()
     # cyto: read and remove multiply-mapped proteins
     #------------------------------------------------
 
-    tbl.cyto <-
-        read.table(files[1], sep="\t", header=TRUE, nrow=-1)[,-3]
+    tbl.cyto <- read.table(files[1], sep="\t", header=TRUE, nrow=-1)[,-3]
     dim(tbl.cyto)  # 4806   11
     plural.mapped <- grep(";", tbl.cyto$Protein)
     length(plural.mapped)  # 75
@@ -75,10 +74,11 @@ read.files <- function()
     new.col.names <- sub(prefix, "", colnames(tbl.ne1))
     suffix <- ".mzML"
     new.col.names <- sub(suffix, "", new.col.names, fixed=TRUE)
+    colnames(tbl.ne1) <- new.col.names
     new.col.names.timeOrdered <-
         c("Protein", "NumPeptides", "D0", "D2", "D4", "D6", "D8", "D10", "D11", "D12", "D14")
 
-    colnames(tbl.ne1) <- new.col.names.timeOrdered
+    tbl.ne1 <- tbl.ne1[, new.col.names.timeOrdered]
 
     #-----------------------------------------------
     # ne2: read and remove multiply-mapped proteins
@@ -106,10 +106,11 @@ read.files <- function()
     new.col.names <- sub(prefix, "", colnames(tbl.ne2))
     suffix <- ".mzML"
     new.col.names <- sub(suffix, "", new.col.names, fixed=TRUE)
+    colnames(tbl.ne2) <- new.col.names
     new.col.names.timeOrdered <-
         c("Protein", "NumPeptides", "D0", "D2", "D4", "D6", "D8", "D10", "D11", "D12", "D14")
 
-    colnames(tbl.ne2) <- new.col.names.timeOrdered
+    tbl.ne2 <- tbl.ne2[, new.col.names.timeOrdered]
 
     #---------------------------------------------
     # summarize
@@ -129,10 +130,25 @@ lookup.uniprotids.biomart <- function()
 
     print(load("tbls.after.cleanup.RData"))
 
+       # also want to find standard gene names for all the complex-identified proteins
+    tbl.complex <- read.table("26-oct-2022/complex-mapping.txt", sep="\t", nrow=-1, header=TRUE)
+    dim(tbl.complex)  # 688 4
+    colnames(tbl.complex) <- c("complex", "gene", "uniprot", "protein")
+    length(unique(tbl.complex$uniprot))  # 622
+
+    dups <- tbl.complex$uniprot[which(duplicated(tbl.complex$uniprot))]
+    tbl.cu <- unique(tbl.complex[, 1:3])
+    dim(tbl.cu)
+
     mart <- useMart("ensembl","hsapiens_gene_ensembl")
     tbl.mart <- getBM(c("hgnc_symbol", "gene_biotype", "uniprotswissprot"), mart = mart)
+
     ids <- unique(c(tbl.ne1$Protein, tbl.ne2$Protein, tbl.cyto$Protein))
+    length(ids) # 5790
+    ids <- unique(c(ids, tbl.complex$uniprot))
+    length(ids) # 5846
     head(tbl.mart)
+
 
       #   hgnc_symbol   gene_biotype uniprotswissprot
       # 1      MT-ND1 protein_coding           P03886
@@ -142,10 +158,11 @@ lookup.uniprotids.biomart <- function()
       # 5     MT-ATP8 protein_coding           P03928
       # 6     MT-ATP6 protein_coding           P00846
 
-    length(ids) # 5790
-    length(intersect(ids, tbl.mart$uniprotswissprot))  # 5670
+    dim(tbl.mart)
+    length(ids) # 5846
+    length(intersect(ids, tbl.mart$uniprotswissprot))  # 5717
     missing.uniprots <- setdiff(ids, tbl.mart$uniprotswissprot)
-    length(missing.uniprots) # 120
+    length(missing.uniprots) # 129
 
     save(ids, missing.uniprots, tbl.mart, file="tbl.uniprots.mapped.to.geneSymbol.RData")
 
@@ -163,7 +180,13 @@ lookup.unmapped.uniprotids <- function()
   for(p in missing.uniprots){
       printf("--- %s", p)
       p.trimmed <- sub("-.*$", "", p)  # "Q8BHN1-3" is isoform 3 of this protein.
-      ncbi.out[[p]] <- entrez_fetch(db="protein", id=p.trimmed, rettype="text")
+      tryCatch({
+          ncbi.out[[p]] <- entrez_fetch(db="protein", id=p.trimmed, rettype="text")
+         },
+         error = function (e){
+             printf("failed on  %s", p)
+             print(e)
+         })
       }
 
   tbls <- list()
@@ -195,13 +218,13 @@ merge.biomart.and.entrez.id.maps <- function()
 
    intersect(tbl.ncbi$uniprot, tbl.mart.ready$uniprot)  # nothing
    tbl.ids <- unique(rbind(tbl.ncbi, tbl.mart.ready))
-   dim(tbl.ids)
+   dim(tbl.ids)   #  33685     3
      # we have them all:
-   checkTrue(length(setdiff(ids, tbl.ids$uniprot), 0))
+   checkTrue(length(setdiff(ids, tbl.ids$uniprot))==0)
 
      # the id map need only include the proteins observed in ne1, ne2, and cyto
    tbl.ids <- subset(tbl.ids, uniprot %in% ids)
-   dim(tbl.ids)
+   dim(tbl.ids)  #  5808    3
 
    save(tbl.ids, file="id.mapping.table.RData")
 
@@ -281,7 +304,65 @@ venn.diagram <- function()
 
 } # venn.diagram
 #------------------------------------------------------------------------------------------------------------------------
+create.single.table <- function()
+{
+   print(load("cyto-ne1-ne2-trimmed-colnames-human-only-with-geneSymbols.RData")) # "tbl.cyto" "tbl.ne1"  "tbl.ne2"
+   stopifnot(all(colnames(tbl.ne2) == colnames(tbl.ne1)))
+   stopifnot(all(colnames(tbl.ne2) == colnames(tbl.cyto)))
 
+   tbl.cyto$fraction <- "cyto"
+   tbl.ne1$fraction   <- "ne1"
+   tbl.ne2$fraction  <- "ne2"
+   ncol(tbl.cyto)
+   ncol(tbl.ne1)
+   ncol(tbl.ne2)
+
+   tbl.all <- rbind(tbl.cyto, tbl.ne1, tbl.ne2)
+   dim(tbl.all)  #  11492    14
+
+   coi <- c("Protein", "gene", "species", "fraction", "NumPeptides", "D0", "D2", "D4", "D6", "D8", "D10", "D11", "D12", "D14")
+   tbl.all <- tbl.all[, coi]
+
+   colnames(tbl.all)[c(1,5)] <- c("protein", "peptideCount")
+   save(tbl.all, file="tbl.all-11492x14.RData")
+
+} # create.single.table
+#------------------------------------------------------------------------------------------------------------------------
+consider.complexes <- function()
+{
+    print(load("tbl.all-11492x14.RData"))
+    print(load("id.mapping.table.RData"))
+
+
+    tbl.c <- read.table("26-oct-2022/complex-mapping.txt", sep="\t", nrow=-1, header=TRUE)
+    dim(tbl.c)  # 688 4
+    colnames(tbl.c) <- c("complex", "gene", "uniprot", "protein")
+    length(unique(tbl.c$uniprot))  # 622
+    dups <- tbl.c$uniprot[which(duplicated(tbl.c$uniprot))]
+    length(dups) # 66
+    tbl.cu <- unique(tbl.c[, 1:3])
+    dim(tbl.cu)
+    length(setdiff(tbl.cu$uniprot, tbl.ids$uniprot)) # 8
+
+    tbl.cu2 <- merge(tbl.cu, tbl.ids[, c("uniprot","geneSymbol")], by="uniprot", all.x=TRUE)
+    dim(tbl.cu2)  # 687 4
+    failures <- which(is.na(tbl.cu2$geneSymbol))
+    length(failures)
+    tbl.cu2 <- tbl.cu2[-failures,]
+    dim(tbl.cu2)
+    tbl.cu2 <- tbl.cu2[, c("geneSymbol", "uniprot", "complex")]
+    colnames(tbl.cu2) <- c("gene", "uniprot","complex")
+    dim(tbl.cu2)   # 679 3
+    table(tbl.cu2$complex)   # BAF RIB SRM  UT
+                             #  13  78  48 540
+
+    tbl.complexes <- tbl.cu2
+    save(tbl.complexes, file="tbl.complexes.RData")
+    table(tbl.complexes$complex)  # BAF RIB SRM TRR  UT
+                                  #  13  78  48   7 540
+
+} # consider.complexes
+#------------------------------------------------------------------------------------------------------------------------
 # missing.map <- list(   # from manual search of https://www.ncbi.nlm.nih.gov/protein/?
 #     "P11884" = "ALDH", # rat
 #     "Q58FG0" = "HSP90AA5P", # human

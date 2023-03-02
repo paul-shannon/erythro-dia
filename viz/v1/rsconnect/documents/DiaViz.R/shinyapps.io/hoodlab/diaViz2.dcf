@@ -1,0 +1,11 @@
+name: diaViz2
+title: DiaViz2
+username:
+account: hoodlab
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 7778233
+bundleId: 6727871
+url: https://hoodlab.shinyapps.io/diaViz2/
+when: 1673576621.224
+lastSyncTime: 1673576621.22401

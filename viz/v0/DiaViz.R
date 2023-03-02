@@ -187,7 +187,8 @@ DiaVizApp = R6Class("DiaVizApp",
                 tbl.tmp <- private$tbl.all
                 complexes <- input$complexSelector
                 fractions <- input$fractionSelector
-                #proteins <- isolate(input$proteinSelector)
+                current.proteins <- isolate(input$proteinSelector)
+                printf("current proteins (if any): %s", paste(current.proteins, collapse=","))
                 #proteins <- NULL
                 #    proteins <- input$proteinSelector
                 #    }
@@ -218,13 +219,16 @@ DiaVizApp = R6Class("DiaVizApp",
                 return(nrow(private$tbl.current))
                 }) # currentTable
 
-            observe({
+           observe({
                 row.count <- currentTable()
+                current.proteins <- isolate(input$proteinSelector)
                 unique.proteins <- sort(unique(private$tbl.current$gene))
+                current.proteins.still.available <- intersect(current.proteins, unique.proteins)
                 printf("    unique.proteins: %d", length(unique.proteins))
                 updateSelectizeInput(session = session,
                                      inputId = "proteinSelector",
                                      choices = unique.proteins,
+                                     selected = current.proteins.still.available,
                                      server=TRUE
                                      )
                 printf("--- observe, new row count: %d", row.count)
@@ -234,38 +238,19 @@ DiaVizApp = R6Class("DiaVizApp",
                     renderText(sprintf("%d rows, %d proteins", row.count, length(unique.proteins)))
                 })
 
-            observeEvent(input$plotCurrentSelectionButton, ignoreInit=FALSE, {
+            observeEvent(input$plotCurrentSelectionButton, ignoreInit=TRUE, {
                 printf("--- plotCurrentSelectionButton")
                 printf("plot %d proteins", length(private$currentProteins))
                 self$plotProteins(input, output)
                 #self$plotCorrelatedProteins(input, output)
                 })
 
-            # output$currentCurveCountDisplay <- renderText(currentTable())
-
-            #observeEvent(input$fractionSelector, ignoreInit=FALSE, {
-            #    newChoices <- input$fractionSelector
-            #    printf("new fractions: %s", paste(newChoices, collapse=", "))
-                #output$currentCurveCountDisplay <- renderText({nrow(private$tbl.current)})
-                                        #plotCorrelatedProteins(input, output)
-             #   })
-
-            #observeEvent(input$proteinSelector, ignoreInit=FALSE, {
-            #    #self$plotCorrelatedProteins(input, output)
-            #    })
-
-            #observeEvent(input$complexSelector, ignoreInit=FALSE, {
-            #    printf("--- complex selected: %s", input$complexSelector)
-            #    })
-
-            #observeEvent(input$geneSelector, ignoreInit=TRUE, {
-            #    tf <- input$geneSelector
-            #    })
 
             observeEvent(input$srm.transformChoice, ignoreInit=TRUE, {
                 new.choice <- input$srm.transformChoice
                 printf("--- setting private$transform: %s", new.choice)
                 private$transform <- new.choice
+                self$plotProteins(input, output)
                 })
 
             observeEvent(input$correlationThresholdSlider, ignoreInit=TRUE, {
